@@ -4,10 +4,10 @@ import sys
 import subprocess
 import time
 
-num_nodes = [100]
-num_shards = [i for i in range(3, 60)]
+num_nodes = [200]
+num_shards = [i for i in range(3, 50)]
 # tx_block_capacity = [5, 8, 10, 15, 20]
-cs_tx_fraction = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+cs_tx_fraction = [0.1]
 
 dir_suffix = time.strftime('%Y-%m-%d/%H-%M')
 

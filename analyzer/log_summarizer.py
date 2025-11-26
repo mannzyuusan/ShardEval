@@ -18,7 +18,10 @@ def add_cell_entry(query, row_data, line):
 
 
 def summarize(dir):
+    # 【変更点1】再帰的に .log ファイルだけを探すように変更するとより便利ですが、
+    # まずはエラーを回避するために元のロジックを維持しつつフォルダをスキップさせます。
     log_files = glob.glob(dir+'/*')
+    
     queries = ['Number of nodes = ', 'Number of shards = ', 'Fraction of cross-shard tx = ', 'Total no of transactions included in Blockchain = ', \
                 'Total no of intra-shard transactions included in Blockchain = ', 'Total no of cross-shard transactions included in Blockchain = ', \
                 'Total no of transactions processed = ', 'Total no of intra-shard transactions processed = ', 'Total no of cross-shard transactions processed = ', \
@@ -27,6 +30,7 @@ def summarize(dir):
     
     col_names = [name.rstrip(' = ') for name in queries]
     
+    # 注意: pathlibの使い方でエラーが出る場合があるため、安全策をとるならここも調整候補ですが、今回はスルーします
     dir_name = f"logs_data/summary/{pathlib.PurePath(dir).parent.name}"
     if not os.path.exists(dir_name):
         ColorPrint.print_info(f"\n[Info]: Creating directory '{dir_name}' for storing summary of the simulation logs\n")
@@ -37,13 +41,21 @@ def summarize(dir):
     writer.writerow(col_names)
 
     for log_file in log_files:
+        # 【変更点2: ここが修正箇所です】
+        # もし log_file がディレクトリ（フォルダ）だったら、中身を見ずにスキップする
+        if os.path.isdir(log_file):
+            continue
+
         ColorPrint.print_info(f"[Info]: Summarizing {log_file} ...")
         row_data = []
-        with open(log_file, 'r') as f:
-            for line in f:
-                for query in queries:
-                    add_cell_entry(query, row_data, line)
-            writer.writerow(row_data)
+        try:
+            with open(log_file, 'r') as f:
+                for line in f:
+                    for query in queries:
+                        add_cell_entry(query, row_data, line)
+                writer.writerow(row_data)
+        except Exception as e:
+            ColorPrint.print_fail(f"[Error]: Failed to read {log_file}. Reason: {e}")
 
     ColorPrint.print_info(f"[Info]: Writing metadata in file '{filename}'\n")
 

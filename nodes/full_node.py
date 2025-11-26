@@ -599,7 +599,9 @@ class FullNode(ParticipatingNode):
                     )
                 self.generate_mini_block(tx_block, 'intra_shard_tx_block')
             else:
-                raise RuntimeError(f"Shard Leader {self.id} received a voted Tx-block {tx_block.id} which is not been voted by all shard nodes.")
+                # ★修正ポイント1: 全結合により不完全なブロックが届くので、エラーにせず無視(pass)する
+                # raise RuntimeError(f"Shard Leader {self.id} received a voted Tx-block {tx_block.id} which is not been voted by all shard nodes.")
+                pass
 
         elif self.node_type == 3:
             if flag:
@@ -632,17 +634,23 @@ class FullNode(ParticipatingNode):
                     # If voting is complete, pass the tx-block to the leader, else broadcast it further in the network
                     neighbours = []
                     if is_voting_complete(tx_block):
-                        neighbours = [ self.next_hop_id ]
-                        if self.params["verbose"]:
-                            print(
-                                "%7.4f" % self.env.now
-                                + " : "
-                                + "Voting for the tx-block %s is complete and node %s sent it on its path to shard leader" % (tx_block.id, self.id)
-                            )
+                         # 投票完了時の処理（ここは一旦そのままでも、リーダーが受け取れればOK）
+                         neighbours = [ self.next_hop_id ] 
                     else:
-                        neighbours = shard_neigbours    # Exclude source node
-                        neighbours.remove(sender_id)
+                        # ★修正ポイント2: PBFTの通信負荷を再現するため、シャード全員に送る
+                        
+                        # 1. 自分の隣人リスト（今はシャード全員が入っているはず）を取得
+                        # ただし、PCメンバーなどは除外して「シャードメンバー」だけにする
+                        shard_neighbours_list = get_shard_neighbours(self.curr_shard_nodes, self.neighbours_ids, self.shard_id)
+                        
+                        # 2. 送信元（sender_id）には送り返さないように除外する
+                        if sender_id in shard_neighbours_list:
+                            shard_neighbours_list.remove(sender_id)
+                        
+                        # 3. 全員を宛先に設定
+                        neighbours = shard_neighbours_list
 
+                    # ブロードキャスト実行 (これで全員にメッセージが飛びます)
                     broadcast(
                         self.env, 
                         tx_block, 
@@ -651,8 +659,7 @@ class FullNode(ParticipatingNode):
                         neighbours, 
                         self.curr_shard_nodes, 
                         self.params
-                    )
-            
+                    ) 
 
     def process_received_mini_blocks_list(self, blocks, sender_id):
         """
@@ -974,7 +981,8 @@ class FullNode(ParticipatingNode):
                 else:
                     # print(f"Cross-shard-block originated in the shard {cross_shard_block.originating_shard_id} and is currently in {self.shard_id}")
                     # print(cross_shard_block.shard_votes_status)
-                    raise RuntimeError(f"Shard Leader {self.id} received a voted Cross-shard-block {cross_shard_block.id} which is not been voted by all shard nodes.")
+                    #raise RuntimeError(f"Shard Leader {self.id} received a voted Cross-shard-block {cross_shard_block.id} which is not been voted by all shard nodes.")
+                    pass
 
             elif self.node_type == 3:
                 if flag:

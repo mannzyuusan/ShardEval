@@ -202,63 +202,48 @@ class Network:
 
         ################## Connect the shard nodes with each other and the leaders ##################
         for idx in range(len(self.shard_nodes)):
-            curr_shard_nodes = {}
-            for node_id in self.shard_nodes[idx]:
-                curr_shard_nodes[node_id] = self.full_nodes[node_id]
-
-            neighbours_info = {}
-            degree = len(self.shard_nodes[idx]) // 2 + 1
-
-            for curr_node_id in self.shard_nodes[idx]:
-                possible_neighbours = self.shard_nodes[idx].copy()
-                possible_neighbours.remove(curr_node_id)
+            # 1. そのシャードに所属するノードのリストを取得
+            curr_shard_nodes_list = self.shard_nodes[idx]
             
-                neighbours_list = np.random.choice(
-                    possible_neighbours, size=degree, replace=False
-                )
+            # 2. そのシャードのノード辞書を作成 (パラメータ渡し用)
+            curr_shard_nodes_dict = {}
+            for node_id in curr_shard_nodes_list:
+                curr_shard_nodes_dict[node_id] = self.full_nodes[node_id]
 
-                if curr_node_id not in neighbours_info.keys():
-                    neighbours_info[curr_node_id] = set()
-                
-                for neighbour_id in neighbours_list:
-                    if neighbour_id not in neighbours_info.keys():
-                        neighbours_info[neighbour_id] = set()
+            # 3. 全結合 (Full Mesh) のロジック
+            # 自分以外の「全員」と繋ぐため、次数を (人数 - 1) に設定
+            degree = len(curr_shard_nodes_list) - 1
 
-                    neighbours_info[curr_node_id].add(neighbour_id)
-                    neighbours_info[neighbour_id].add(curr_node_id)
+            for curr_node_id in curr_shard_nodes_list:
+                # 自分以外の全メンバーを「隣人」の候補にする
+                possible_neighbours = list(curr_shard_nodes_list) # コピーを作成
+                possible_neighbours.remove(curr_node_id)          # 自分自身を削除
                 
-                self.full_nodes[curr_node_id].shard_leader = self.get_shard_leader(idx)
-            
-            principal_committee_neigbours = []
-            for key, value in neighbours_info.items():
-                if self.full_nodes[key].node_type == 2:
-                    # If curr_node is a leader, append to the neighbors list
-                    principal_committee_neigbours = self.full_nodes[key].neighbours_ids
-                    self.full_nodes[key].update_neighbours(list(value))
+                # 全員を隣人リストとして採用 (ランダム選択不要)
+                neighbours_list = possible_neighbours
+
+                # 4. リーダーの場合の特別処理
+                # リーダーは「シャードメンバー全員」＋「PCメンバー(一部)」と繋がる必要がある
+                if self.full_nodes[curr_node_id].node_type == 2:
+                    # 既存のPCとの接続(neighbours_ids)を維持しつつ、シャード全員を追加
+                    current_neighbours = self.full_nodes[curr_node_id].neighbours_ids
+                    # 重複を防ぐため set にして結合
+                    # 修正後のコード
+                    new_neighbours = list(set(list(current_neighbours) + list(neighbours_list)))
+                    self.full_nodes[curr_node_id].update_neighbours(new_neighbours)
+                
+                # 5. 一般メンバーの場合
                 else:
-                    self.full_nodes[key].add_network_parameters(curr_shard_nodes, list(value))
-            
-            # Create a Spanning Tree for the broadcast for the shard nodes
-            spanning_tree = SpanningTree(curr_shard_nodes)
-            neighbours_info = spanning_tree.Kruskal_MST()
-            
-            # Make edges bi-directional
-            for id, neighbours in neighbours_info.items():
-                for neighbour_id in list(neighbours):
-                    neighbours_info[neighbour_id].add(id)
+                    self.full_nodes[curr_node_id].add_network_parameters(curr_shard_nodes_dict, neighbours_list)
 
-            # Update the neighbours
-            for key, value in neighbours_info.items():
-                # print(f"{key} -- {self.full_nodes[key].neighbours_ids}")
-                value = list(value)
-                if self.full_nodes[key].node_type == 2:
-                    value += list(principal_committee_neigbours)
-                self.full_nodes[key].update_neighbours(value)
-            
-            # Assign next_hop to reach the leader
-            assign_next_hop_to_leader(curr_shard_nodes, self.get_shard_leader(idx))
-            # for id, node in curr_shard_nodes.items():
-            #     print(f"{id} = {node.next_hop_id}")
+                # リーダー情報をセット (これは変更なし)
+                self.full_nodes[curr_node_id].shard_leader = self.get_shard_leader(idx)
+
+            # 6. 【重要】リーダーへの経路 (next_hop) 設定
+            # 全結合になったので、リーダーへの最短経路は「直接リーダーに送る」ことになります。
+            # 念のため、既存の BFS ロジックを残しても動きますが、
+            # PBFT化するなら全員が直接リーダーと話せるので、必須ではなくなります。
+            assign_next_hop_to_leader(curr_shard_nodes_dict, self.get_shard_leader(idx))
 
         """
         Cross-shard Transactions -
